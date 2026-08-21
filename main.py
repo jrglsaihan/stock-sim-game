@@ -640,7 +640,7 @@ KV = '''
     cursor_color: ACCENT
     font_size: dp(15)
     multiline: False
-    padding: dp(12), dp(11)
+    padding: dp(12), (self.height - self.line_height) / 2.0
     canvas.before:
         Color:
             rgba: INPUT
@@ -899,7 +899,7 @@ KV = '''
                         orientation: 'horizontal'
                         spacing: dp(8)
                         size_hint_y: None
-                        height: dp(46)
+                        height: dp(52)
                         STextInput:
                             id: search_input
                             hint_text: '输入 6 位代码，如 600519'
@@ -909,7 +909,7 @@ KV = '''
                             id: search_btn
                             text: '搜索'
                             size_hint_x: None
-                            width: dp(76)
+                            width: dp(84)
                             on_release: root.do_search()
                 # 热门标的
                 Card:
@@ -1628,24 +1628,27 @@ class GameScreen(Screen):
             box.add_widget(self._holding_row(code, pos, price, avg, pnl, pnl_pct))
         self.ids.holdings_summary.text = f'市值 {fmt(total_mv)} · 盈亏 {fmt(total_mv - total_cost)}'
 
-    def _auto_label(self, text, color=C_TEXT, bold=False, font_size=dp(12)):
-        """自动换行、自动高度的文本标签，避免窄屏下文字乱码/被截断。"""
+    def _mk_row_label(self, text, color=C_TEXT, bold=False, font_size=dp(12),
+                      height=dp(18)):
+        """持仓行内的文本标签：固定高度 + 超长自动省略号，绝不重叠。"""
         lbl = Label(text=text, color=color, bold=bold, font_size=font_size,
-                    halign='left', valign='top', size_hint_y=None, size_hint_x=1)
+                    halign='left', valign='middle', size_hint_y=None,
+                    size_hint_x=1, height=height, shorten=True)
         lbl.bind(width=lambda *a: setattr(lbl, 'text_size', (lbl.width, None)))
-        lbl.bind(texture_size=lambda *a: setattr(lbl, 'height', lbl.texture_size[1] + dp(2)))
         return lbl
 
     def _holding_row(self, code, pos, price, avg, pnl, pnl_pct):
         card = Card(orientation='horizontal', padding=dp(10), spacing=dp(8), bg=C_CARD2)
         info = BoxLayout(orientation='vertical', spacing=dp(2), size_hint_x=1)
-        l1 = self._auto_label(f"{pos.name}  {code}", bold=True, font_size=dp(14))
-        l2 = self._auto_label(f"持仓 {pos.qty} 股 · 可卖 {pos.sellable} 股", color=C_SUB)
+        l1 = self._mk_row_label(f"{pos.name}  {code}", bold=True,
+                                font_size=dp(14), height=dp(24))
+        l2 = self._mk_row_label(f"持仓 {pos.qty} 股 · 可卖 {pos.sellable} 股",
+                                color=C_SUB, height=dp(18))
         pcolor = C_RED if pnl >= 0 else C_GREEN
-        l3 = self._auto_label(
-            f"成本 {fmt(avg)} · 现价 {fmt(price)}\n"
+        l3 = self._mk_row_label(
+            f"成本 {fmt(avg)} · 现价 {fmt(price)} · "
             f"盈亏 {('+' if pnl >= 0 else '')}{fmt(pnl)} ({('+' if pnl_pct >= 0 else '')}{pnl_pct:.2f}%)",
-            color=pcolor)
+            color=pcolor, height=dp(18))
         info.add_widget(l1)
         info.add_widget(l2)
         info.add_widget(l3)
@@ -1713,11 +1716,10 @@ class StockSimApp(App):
     title = '模拟炒股练习'
 
     def build(self):
+        # 重要：千万不要在这里设置 Window.size！
+        # 安卓上强制设置窗口大小会导致界面只占屏幕一角、触摸坐标错乱。
+        # 安卓端 Kivy 会自动使用全屏尺寸；桌面端使用默认窗口即可。
         Window.clearcolor = C_BG
-        try:
-            Window.size = (460, 820)
-        except Exception:
-            pass
         self.state = None
         Builder.load_string(KV.replace('FONTREF', repr(FONT_NAME)))
         self.sm = Root()
