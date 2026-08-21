@@ -16,7 +16,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 
 # (str) 应用版本
-version = 0.5
+version = 0.6
 
 # (list) 依赖（本程序只用标准库 urllib + kivy，无需 requests）
 requirements = python3,kivy

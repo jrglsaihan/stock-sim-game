@@ -402,6 +402,7 @@ class GameState:
         self.positions = {}
         self.log = []
         self.trades = 0
+        self.finished = False      # 是否已结束（破产/成功）
         self.created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     # ---------- 买入 ----------
@@ -492,6 +493,7 @@ class GameState:
             'start_funds': self.start_funds,
             'cash': self.cash,
             'trades': self.trades,
+            'finished': self.finished,
             'created_at': self.created_at,
             'log': self.log,
             'positions': {
@@ -509,6 +511,7 @@ class GameState:
         st.start_funds = float(d.get('start_funds', st.start_funds))
         st.cash = float(d.get('cash', st.cash))
         st.trades = int(d.get('trades', 0))
+        st.finished = bool(d.get('finished', False))
         st.created_at = d.get('created_at', st.created_at)
         st.log = list(d.get('log', []))
         for code, pd in (d.get('positions') or {}).items():
@@ -777,6 +780,12 @@ KV = '''
                 bg_down: CARD
                 font_size: dp(13)
                 on_release: app.show_rules()
+            RButton:
+                text: '历史存档'
+                bg: CARD2
+                bg_down: CARD
+                font_size: dp(13)
+                on_release: app.show_save_history()
             RButton:
                 text: '免责声明'
                 bg: CARD2
@@ -1374,16 +1383,17 @@ class MenuScreen(Screen):
 
     def _refresh_continue_btn(self, *a):
         app = App.get_running_app()
-        st = app.load_state()
         btn = self.ids.continue_btn
-        if st:
-            btn.disabled = False
-            btn.opacity = 1
-            btn.text = f'继续上次游戏（{DIFFICULTIES[st.difficulty]["name"]}）'
-        else:
-            btn.disabled = True
-            btn.opacity = 0.35
-            btn.text = '暂无存档'
+        # 最近的一个“未结束”存档
+        for p, st, mt in app.list_saves():
+            if not st.finished:
+                btn.disabled = False
+                btn.opacity = 1
+                btn.text = f'继续上次游戏（{DIFFICULTIES[st.difficulty]["name"]}）'
+                return
+        btn.disabled = True
+        btn.opacity = 0.35
+        btn.text = '暂无存档'
 
 
 class GameScreen(Screen):
@@ -1843,58 +1853,107 @@ class StockSimApp(App):
         # 安卓端 Kivy 会自动使用全屏尺寸；桌面端使用默认窗口即可。
         Window.clearcolor = C_BG
         self.state = None
+        self.save_file = None      # 当前存档文件路径（多存档体系）
+        self.migrate_legacy_save()
         Builder.load_string(KV.replace('FONTREF', repr(FONT_NAME)))
         self.sm = Root()
         self.sm.transition = FadeTransition(duration=0.25)
         return self.sm
 
-    # ---------- 存档 ----------
-    def save_path(self):
+    # ---------- 存档（多存档 + 历史） ----------
+    def saves_dir(self):
         base = self.user_data_dir or os.path.dirname(os.path.abspath(__file__))
-        return os.path.join(base, 'stock_sim_save.json')
+        d = os.path.join(base, 'saves')
+        try:
+            os.makedirs(d, exist_ok=True)
+        except Exception:
+            pass
+        return d
 
-    def has_save(self):
-        return os.path.exists(self.save_path())
+    def new_save_path(self):
+        return os.path.join(self.saves_dir(),
+                            'save_' + datetime.now().strftime('%Y%m%d_%H%M%S_%f') + '.json')
 
     def save_state(self):
         if not self.state:
             return
+        if not self.save_file:
+            self.save_file = self.new_save_path()
         try:
-            os.makedirs(os.path.dirname(self.save_path()), exist_ok=True)
-            with open(self.save_path(), 'w', encoding='utf-8') as f:
+            with open(self.save_file, 'w', encoding='utf-8') as f:
                 json.dump(self.state.to_dict(), f, ensure_ascii=False, indent=2)
         except Exception:
             pass
 
-    def load_state(self):
-        if not self.has_save():
-            return None
+    def list_saves(self):
+        """返回 [(存档路径, GameState, 修改时间)]，按时间倒序（最新在前）。"""
+        items = []
         try:
-            with open(self.save_path(), 'r', encoding='utf-8') as f:
+            for fn in os.listdir(self.saves_dir()):
+                if not fn.endswith('.json'):
+                    continue
+                p = os.path.join(self.saves_dir(), fn)
+                try:
+                    with open(p, encoding='utf-8') as f:
+                        st = GameState.from_dict(json.load(f))
+                    items.append((p, st, os.path.getmtime(p)))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        items.sort(key=lambda x: x[2], reverse=True)
+        return items
+
+    def load_save(self, path):
+        try:
+            with open(path, encoding='utf-8') as f:
                 return GameState.from_dict(json.load(f))
         except Exception:
             return None
 
-    def clear_save(self):
+    def migrate_legacy_save(self):
+        """把旧版单存档文件迁移进 saves/ 目录（只做一次）。"""
+        base = self.user_data_dir or os.path.dirname(os.path.abspath(__file__))
+        legacy = os.path.join(base, 'stock_sim_save.json')
+        if not os.path.exists(legacy):
+            return
         try:
-            if self.has_save():
-                os.remove(self.save_path())
+            with open(legacy, encoding='utf-8') as f:
+                st = GameState.from_dict(json.load(f))
+            if not st.finished:
+                p = os.path.join(self.saves_dir(),
+                                 'save_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.json')
+                with open(p, 'w', encoding='utf-8') as f:
+                    json.dump(st.to_dict(), f, ensure_ascii=False, indent=2)
+            os.remove(legacy)
         except Exception:
             pass
 
     # ---------- 页面跳转 ----------
     def choose_difficulty(self, key):
         self.state = GameState(key)
+        self.save_file = None          # 新游戏 → 新建存档文件，不覆盖旧局
         self.save_state()
         self.sm.current = 'game'
 
     def continue_game(self):
-        st = self.load_state()
+        saves = self.list_saves()
+        for p, st, _ in saves:
+            if not st.finished:
+                self.state = st
+                self.save_file = p
+                self.sm.current = 'game'
+                return
+        self.notify('提示', '没有可继续的存档')
+
+    def continue_save(self, path):
+        st = self.load_save(path)
         if st:
             self.state = st
+            self.save_file = path
             self.sm.current = 'game'
         else:
-            self.notify('提示', '没有可继续的存档')
+            self.notify('提示', '存档读取失败')
 
     def goto_menu(self):
         self.save_state()
@@ -1903,6 +1962,7 @@ class StockSimApp(App):
     def replay(self):
         diff = self.state.difficulty if self.state else 'easy'
         self.state = GameState(diff)
+        self.save_file = None
         self.save_state()
         self.sm.current = 'game'
 
@@ -1911,7 +1971,14 @@ class StockSimApp(App):
         if game.game_ended:
             return
         game.game_ended = True
-        self.clear_save()
+        # 标记存档已结束（保留在历史列表里，但不能再继续）
+        if self.state and self.save_file:
+            self.state.finished = True
+            try:
+                with open(self.save_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.state.to_dict(), f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
         over = self.sm.get_screen('over')
         st = self.state
         if win:
@@ -1975,6 +2042,48 @@ class StockSimApp(App):
 
     def show_disclaimer(self):
         self.show_popup_text('免责声明', DISCLAIMER_TEXT)
+
+    def show_save_history(self):
+        """历史存档弹窗：列出所有存档，点击继续。"""
+        saves = self.list_saves()
+        content = PopupBox(orientation='vertical', padding=dp(14), spacing=dp(10))
+        tl = Label(text='历史存档', bold=True, font_size=dp(18), color=C_GOLD,
+                   halign='left', valign='middle', size_hint_y=None, height=dp(30))
+        tl.bind(width=lambda *a: setattr(tl, 'text_size', (tl.width, None)))
+        content.add_widget(tl)
+        if not saves:
+            empty = Label(text='暂无历史存档，开一局试试吧～',
+                          color=C_SUB, size_hint_y=None, height=dp(40),
+                          halign='center', valign='middle')
+            empty.bind(width=lambda *a: setattr(empty, 'text_size', (empty.width, None)))
+            content.add_widget(empty)
+        else:
+            sc = ScrollView(size_hint=(1, 0.85), bar_width=dp(6))
+            grid = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
+            grid.bind(minimum_height=grid.setter('height'))
+            for p, st, mt in saves:
+                ts = datetime.fromtimestamp(mt).strftime('%m-%d %H:%M')
+                dname = DIFFICULTIES[st.difficulty]['name']
+                text = f'{dname} · {ts} · 资金 {fmt(st.cash)} 元'
+                if st.finished:
+                    btn = RButton(text=text + '（已结束）', bg=C_CARD2, bg_down=C_CARD,
+                                  font_size=dp(13), size_hint_y=None, height=dp(46))
+                    btn.disabled = True
+                else:
+                    btn = RButton(text=text, bg=C_ACCENT, bg_down=C_ACCENT_D,
+                                  font_size=dp(13), size_hint_y=None, height=dp(46))
+                    btn.bind(on_release=lambda *a, pp=p: self.continue_save(pp))
+                grid.add_widget(btn)
+            sc.add_widget(grid)
+            content.add_widget(sc)
+        close = RButton(text='关闭', size_hint_y=None, height=dp(46),
+                        bg=C_CARD2, bg_down=C_CARD)
+        content.add_widget(close)
+        popup = Popup(content=content, size_hint=(0.92, 0.72), auto_dismiss=True)
+        popup.background = ''
+        popup.background_color = (0, 0, 0, 0)
+        close.bind(on_release=popup.dismiss)
+        popup.open()
 
 
 if __name__ == '__main__':
