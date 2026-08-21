@@ -67,7 +67,7 @@ COMMISSION_MIN = 5.0            # 佣金最低 5 元/笔
 STAMP_TAX_RATE = 0.0005         # 印花税：万分之 5（仅卖出收取）
 TRANSFER_FEE_RATE = 0.00001     # 过户费：十万分之一（买卖双向）
 
-REFRESH_INTERVAL = 15           # 行情自动刷新间隔（秒）
+REFRESH_INTERVAL = 30           # 行情自动刷新间隔（秒）
 
 # 热门标的（用于快速选择 + 离线模式显示名称）
 HOT_STOCKS = {
@@ -186,6 +186,7 @@ class QuoteService:
     """拉取沪深 A 股实时/当日行情。断网时提供离线模拟行情以便练习。"""
     API_HTTPS = "https://qt.gtimg.cn/q={}"
     API_HTTP = "http://qt.gtimg.cn/q={}"
+    API_SINA = "https://hq.sinajs.cn/list={}"   # 备用源：新浪
 
     @staticmethod
     def resolve_symbol(code):
@@ -225,6 +226,20 @@ class QuoteService:
             except Exception:
                 continue
         return None
+
+    @staticmethod
+    def _request_sina(symbols):
+        """请求新浪接口（作为腾讯行情失效时的备用）。返回 GBK 解码后的文本。"""
+        url = QuoteService.API_SINA.format(','.join(symbols))
+        try:
+            req = urllib.request.Request(url, headers={
+                'User-Agent': 'Mozilla/5.0',
+                'Referer': 'https://finance.sina.com.cn',
+            })
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                return resp.read().decode('gbk', errors='ignore')
+        except Exception:
+            return None
 
     @staticmethod
     def _calc_limits(name, code, prev_close):
@@ -275,6 +290,34 @@ class QuoteService:
         return out
 
     @staticmethod
+    def _parse_sina(text):
+        """解析新浪接口返回文本（备用），返回 {6位代码: Quote}。"""
+        out = {}
+        for m in re.finditer(r'var hq_str_(\w+)="([^"]*)"', text or ''):
+            symbol = m.group(1)
+            f = m.group(2).split(',')
+            if len(f) < 6 or not f[0]:
+                continue
+            try:
+                name = f[0]
+                openp = float(f[1])
+                prev = float(f[2])
+                price = float(f[3])
+                high = float(f[4])
+                low = float(f[5])
+            except (ValueError, IndexError):
+                continue
+            if price <= 0:
+                continue
+            code = symbol[2:]
+            change = rmb(price - prev)
+            pct = rmb(change / prev * 100) if prev else 0
+            lu, ld = QuoteService._calc_limits(name, code, prev)
+            out[code] = Quote(code, name, price, prev, openp, high, low,
+                              change, pct, lu, ld)
+        return out
+
+    @staticmethod
     def offline_quote(code):
         """离线模拟行情：按代码+日期生成稳定价格，保证断网也能练习。"""
         seed = int(code) + int(datetime.now().strftime('%Y%m%d'))
@@ -298,11 +341,16 @@ class QuoteService:
         _, symbol = QuoteService.resolve_symbol(code)
         if not symbol:
             return None, "代码格式错误，请输入 6 位数字代码（如 600519）"
+        # 腾讯优先，失败再试新浪
         text = QuoteService._request([symbol])
+        if text is None:
+            text = QuoteService._request_sina([symbol])
         if text is None:
             # 断网：返回离线模拟行情（离线标记= True）
             return QuoteService.offline_quote(symbol[2:]), "offline"
         q = QuoteService._parse(text).get(symbol[2:])
+        if q is None:
+            q = QuoteService._parse_sina(text).get(symbol[2:])
         if q:
             return q, None
         return None, "未找到该股票（代码不存在或已停牌）"
@@ -319,8 +367,13 @@ class QuoteService:
             return {}
         text = QuoteService._request(symbols)
         if text is None:
+            text = QuoteService._request_sina(symbols)
+        if text is None:
             return {}
-        return QuoteService._parse(text)
+        data = QuoteService._parse(text)
+        if not data:
+            data = QuoteService._parse_sina(text)
+        return data
 
 
 # ============================================================
@@ -669,7 +722,7 @@ KV = '''
             height: dp(92)
             spacing: dp(4)
             Label:
-                text: '📈 模拟炒股练习'
+                text: '模拟炒股练习'
                 font_size: dp(30)
                 bold: True
                 color: GOLD
@@ -682,7 +735,7 @@ KV = '''
                 size_hint_y: None
                 height: dp(22)
         RButton:
-            text: '🟢 简单\\n初始虚拟资金 100 万元'
+            text: '简单\\n初始虚拟资金 100 万元'
             bg: GREEN
             bg_down: GREEN_D
             font_size: dp(17)
@@ -690,7 +743,7 @@ KV = '''
             height: dp(78)
             on_release: app.choose_difficulty('easy')
         RButton:
-            text: '🟡 困难\\n初始虚拟资金 50 万元'
+            text: '困难\\n初始虚拟资金 50 万元'
             bg: (0.90, 0.62, 0.10, 1)
             bg_down: (0.75, 0.50, 0.06, 1)
             font_size: dp(17)
@@ -698,7 +751,7 @@ KV = '''
             height: dp(78)
             on_release: app.choose_difficulty('hard')
         RButton:
-            text: '🔴 地狱\\n初始虚拟资金 30 万元'
+            text: '地狱\\n初始虚拟资金 30 万元'
             bg: RED
             bg_down: RED_D
             font_size: dp(17)
@@ -760,7 +813,7 @@ KV = '''
                     halign: 'left'
                     text_size: self.size
                 RButton:
-                    text: '🔄 刷新'
+                    text: '刷新'
                     bg: CARD2
                     bg_down: CARD
                     font_size: dp(12)
@@ -853,6 +906,7 @@ KV = '''
                             size_hint_x: 1
                             on_text_validate: root.do_search()
                         RButton:
+                            id: search_btn
                             text: '搜索'
                             size_hint_x: None
                             width: dp(76)
@@ -860,7 +914,7 @@ KV = '''
                 # 热门标的
                 Card:
                     Label:
-                        text: '🔥 热门标的（点击快速选择）'
+                        text: '热门标的（点击快速选择）'
                         color: SUB
                         font_size: dp(12)
                         size_hint_y: None
@@ -967,7 +1021,7 @@ KV = '''
                         size_hint_y: None
                         height: self.minimum_height
                         Label:
-                            text: '📗 买入'
+                            text: '买入'
                             color: RED
                             bold: True
                             font_size: dp(15)
@@ -1043,7 +1097,7 @@ KV = '''
                         size_hint_y: None
                         height: self.minimum_height
                         Label:
-                            text: '📕 卖出'
+                            text: '卖出'
                             color: GREEN
                             bold: True
                             font_size: dp(15)
@@ -1118,7 +1172,7 @@ KV = '''
                         size_hint_y: None
                         height: dp(30)
                         Label:
-                            text: '📊 我的持仓'
+                            text: '我的持仓'
                             bold: True
                             color: GOLD
                             font_size: dp(15)
@@ -1148,7 +1202,7 @@ KV = '''
                 # 交易记录
                 Card:
                     Label:
-                        text: '📜 交易记录'
+                        text: '交易记录'
                         bold: True
                         color: GOLD
                         font_size: dp(15)
@@ -1231,8 +1285,7 @@ class MenuScreen(Screen):
         if st:
             btn.disabled = False
             btn.opacity = 1
-            btn.text = (f'▶ 继续上次游戏（{DIFFICULTIES[st.difficulty]["name"]} · '
-                        f'资金 {fmt(st.cash)} 元）')
+            btn.text = f'继续上次游戏（{DIFFICULTIES[st.difficulty]["name"]}）'
         else:
             btn.disabled = True
             btn.opacity = 0.35
@@ -1276,8 +1329,9 @@ class GameScreen(Screen):
     def do_search(self):
         code = (self.ids.search_input.text or '').strip()
         if not code:
-            self.app.notify('提示', '请输入股票代码')
+            self.app.notify('提示', '请输入股票代码，例如 600519')
             return
+        self.ids.search_btn.text = '搜索中...'
         self.fetch_quote_async(code, self._on_search)
 
     def quick_search(self, code):
@@ -1291,6 +1345,7 @@ class GameScreen(Screen):
         threading.Thread(target=work, daemon=True).start()
 
     def _on_search(self, q, err):
+        self.ids.search_btn.text = '搜索'
         if q is None:
             self.app.notify('获取行情失败', err or '未知错误')
             return
@@ -1495,16 +1550,22 @@ class GameScreen(Screen):
         threading.Thread(target=work, daemon=True).start()
 
     def _apply_quotes(self, data):
+        changed = False
         for code, q in data.items():
+            old = self.price_cache.get(code)
             self.price_cache[code] = q.price
             pos = self.app.state.positions.get(code)
             if pos:
                 pos.last_price = q.price
+            if old is None or abs(old - q.price) > 1e-6:
+                changed = True
         if self.current_quote and self.current_quote.code in data:
             self.current_quote = data[self.current_quote.code]
             self.show_quote(self.current_quote)
         self.update_status()
-        self.rebuild_holdings()
+        # 只有价格真的变化时才重建持仓列表，减少卡顿
+        if changed:
+            self.rebuild_holdings()
 
     # ---------- UI 刷新 ----------
     def refresh_ui(self):
@@ -1567,21 +1628,24 @@ class GameScreen(Screen):
             box.add_widget(self._holding_row(code, pos, price, avg, pnl, pnl_pct))
         self.ids.holdings_summary.text = f'市值 {fmt(total_mv)} · 盈亏 {fmt(total_mv - total_cost)}'
 
+    def _auto_label(self, text, color=C_TEXT, bold=False, font_size=dp(12)):
+        """自动换行、自动高度的文本标签，避免窄屏下文字乱码/被截断。"""
+        lbl = Label(text=text, color=color, bold=bold, font_size=font_size,
+                    halign='left', valign='top', size_hint_y=None, size_hint_x=1)
+        lbl.bind(width=lambda *a: setattr(lbl, 'text_size', (lbl.width, None)))
+        lbl.bind(texture_size=lambda *a: setattr(lbl, 'height', lbl.texture_size[1] + dp(2)))
+        return lbl
+
     def _holding_row(self, code, pos, price, avg, pnl, pnl_pct):
         card = Card(orientation='horizontal', padding=dp(10), spacing=dp(8), bg=C_CARD2)
         info = BoxLayout(orientation='vertical', spacing=dp(2), size_hint_x=1)
-        l1 = Label(text=f"{pos.name}  {code}", bold=True, font_size=dp(14),
-                   color=C_TEXT, halign='left', size_hint_y=None, height=dp(20))
-        l1.text_size = (dp(210), None)
-        l2 = Label(text=f"持仓 {pos.qty} 股 · 可卖 {pos.sellable} 股",
-                   font_size=dp(11), color=C_SUB, halign='left',
-                   size_hint_y=None, height=dp(16))
-        l2.text_size = (dp(210), None)
+        l1 = self._auto_label(f"{pos.name}  {code}", bold=True, font_size=dp(14))
+        l2 = self._auto_label(f"持仓 {pos.qty} 股 · 可卖 {pos.sellable} 股", color=C_SUB)
         pcolor = C_RED if pnl >= 0 else C_GREEN
-        l3 = Label(text=f"成本 {fmt(avg)} · 现价 {fmt(price)}\n盈亏 {('+' if pnl >= 0 else '')}{fmt(pnl)} ({('+' if pnl_pct >= 0 else '')}{pnl_pct:.2f}%)",
-                   font_size=dp(11), color=pcolor, halign='left',
-                   size_hint_y=None, height=dp(34))
-        l3.text_size = (dp(210), None)
+        l3 = self._auto_label(
+            f"成本 {fmt(avg)} · 现价 {fmt(price)}\n"
+            f"盈亏 {('+' if pnl >= 0 else '')}{fmt(pnl)} ({('+' if pnl_pct >= 0 else '')}{pnl_pct:.2f}%)",
+            color=pcolor)
         info.add_widget(l1)
         info.add_widget(l2)
         info.add_widget(l3)
@@ -1604,7 +1668,7 @@ class GameScreen(Screen):
         box.clear_widgets()
         if not self.app.state:
             return
-        for line in self.app.state.log[:80]:
+        for line in self.app.state.log[:50]:
             lbl = Label(text=line, font_size=dp(11), color=C_SUB,
                         halign='left', size_hint_y=None, height=dp(18))
             lbl.text_size = (dp(300), None)

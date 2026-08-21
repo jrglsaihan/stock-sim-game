@@ -16,7 +16,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 
 # (str) 应用版本
-version = 0.1
+version = 0.2
 
 # (list) 依赖（本程序只用标准库 urllib + kivy，无需 requests）
 requirements = python3,kivy
@@ -45,8 +45,8 @@ android.allow_backup = True
 # (bool) 自动接受安卓 SDK 许可协议（在 CI 无人值守环境下必须为 True）
 android.accept_sdk_license = True
 
-# 应用图标（可选；不设置则用默认图标）
-# icon.filename = %(source.dir)s/icon.png
+# 应用图标（用 logo 白背景竖版 生成）
+icon.filename = %(source.dir)s/icon.png
 
 
 [buildozer]
