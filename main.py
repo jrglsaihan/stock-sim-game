@@ -905,11 +905,22 @@ KV = '''
                             spacing: dp(8)
                             size_hint_y: None
                             height: dp(52)
-                            STextInput:
-                                id: search_input
-                                hint_text: '输入 6 位代码，如 600519'
+                            Label:
+                                id: search_display
+                                text: '点击下方数字输入代码'
+                                color: SUB
+                                font_size: dp(17)
+                                halign: 'left'
+                                valign: 'middle'
                                 size_hint_x: 1
-                                on_text_validate: root.do_search()
+                                text_size: self.width - dp(20), None
+                                canvas.before:
+                                    Color:
+                                        rgba: INPUT
+                                    RoundedRectangle:
+                                        radius: [dp(10), dp(10), dp(10), dp(10)]
+                                        pos: self.pos
+                                        size: self.size
                             RButton:
                                 id: search_btn
                                 text: '搜索'
@@ -1382,6 +1393,7 @@ class GameScreen(Screen):
         self.current_quote = None   # 当前选中股票
         self.refresh_event = None
         self.game_ended = False
+        self.search_code = ''       # 数字键盘输入的代码
 
     @property
     def app(self):
@@ -1392,6 +1404,7 @@ class GameScreen(Screen):
         self.game_ended = False
         self.current_quote = None
         self.price_cache = {}
+        self.search_code = ''
         st = self.app.state
         if st:
             for code, p in st.positions.items():
@@ -1410,29 +1423,40 @@ class GameScreen(Screen):
 
     # ---------- 搜索 / 行情 ----------
     def do_search(self):
-        code = (self.ids.search_input.text or '').strip()
+        code = (self.search_code or '').strip()
         if not code:
-            self.app.notify('提示', '请输入股票代码，例如 600519')
+            self.app.notify('提示', '请先用数字键盘输入 6 位股票代码，例如 600519')
             return
         self.ids.search_btn.text = '搜索中...'
         self.fetch_quote_async(code, self._on_search)
 
     def quick_search(self, code):
-        self.ids.search_input.text = code
+        self.search_code = code
+        self._update_search_display()
         self.do_search()
 
-    # ---------- 屏幕数字键盘（不依赖系统键盘，解决 macOS/安卓输入法不响应的问题） ----------
+    # ---------- 屏幕数字键盘（不依赖系统键盘，Mac/安卓通用） ----------
+    def _update_search_display(self):
+        lbl = self.ids.search_display
+        if self.search_code:
+            lbl.text = self.search_code
+            lbl.color = C_TEXT
+        else:
+            lbl.text = '点击下方数字输入代码'
+            lbl.color = C_SUB
+
     def keypad_input(self, digit):
-        inp = self.ids.search_input
-        if len(inp.text) < 6:
-            inp.text += digit
+        if len(self.search_code) < 6:
+            self.search_code += digit
+            self._update_search_display()
 
     def keypad_backspace(self):
-        inp = self.ids.search_input
-        inp.text = inp.text[:-1]
+        self.search_code = self.search_code[:-1]
+        self._update_search_display()
 
     def keypad_clear(self):
-        self.ids.search_input.text = ''
+        self.search_code = ''
+        self._update_search_display()
 
     def fetch_quote_async(self, code, callback):
         def work():
@@ -1735,7 +1759,9 @@ class GameScreen(Screen):
 
     def _holding_row(self, code, pos, price, avg, pnl, pnl_pct):
         card = Card(orientation='horizontal', padding=dp(10), spacing=dp(8), bg=C_CARD2)
-        info = BoxLayout(orientation='vertical', spacing=dp(2), size_hint_x=1)
+        # 关键：两个子容器必须 size_hint_y=None，否则行高计算时不算内容 → 行太矮 → 文字溢出重叠
+        info = BoxLayout(orientation='vertical', spacing=dp(2),
+                         size_hint_x=1, size_hint_y=None)
         l1 = self._mk_row_label(f"{pos.name}  {code}", bold=True,
                                 font_size=dp(14), height=dp(24))
         l2 = self._mk_row_label(f"持仓 {pos.qty} 股 · 可卖 {pos.sellable} 股",
@@ -1749,7 +1775,7 @@ class GameScreen(Screen):
         info.add_widget(l2)
         info.add_widget(l3)
         btns = BoxLayout(orientation='vertical', spacing=dp(4),
-                         size_hint_x=None, width=dp(60))
+                         size_hint_x=None, width=dp(60), size_hint_y=None)
         b1 = RButton(text='买', font_size=dp(12), size_hint_y=None,
                      height=dp(30), bg=C_RED, bg_down=C_RED_D)
         b1.bind(on_release=lambda *a, c=code: self.select_from_holding(c, 'buy'))
