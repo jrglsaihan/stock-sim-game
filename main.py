@@ -640,7 +640,7 @@ KV = '''
     cursor_color: ACCENT
     font_size: dp(15)
     multiline: False
-    padding: dp(12), (self.height - self.line_height) / 2.0
+    padding: dp(12), dp(14)
     canvas.before:
         Color:
             rgba: INPUT
@@ -896,21 +896,104 @@ KV = '''
                 # 搜索
                 Card:
                     BoxLayout:
-                        orientation: 'horizontal'
+                        orientation: 'vertical'
                         spacing: dp(8)
                         size_hint_y: None
-                        height: dp(52)
-                        STextInput:
-                            id: search_input
-                            hint_text: '输入 6 位代码，如 600519'
-                            size_hint_x: 1
-                            on_text_validate: root.do_search()
-                        RButton:
-                            id: search_btn
-                            text: '搜索'
-                            size_hint_x: None
-                            width: dp(84)
-                            on_release: root.do_search()
+                        height: self.minimum_height
+                        BoxLayout:
+                            orientation: 'horizontal'
+                            spacing: dp(8)
+                            size_hint_y: None
+                            height: dp(52)
+                            STextInput:
+                                id: search_input
+                                hint_text: '输入 6 位代码，如 600519'
+                                size_hint_x: 1
+                                on_text_validate: root.do_search()
+                            RButton:
+                                id: search_btn
+                                text: '搜索'
+                                size_hint_x: None
+                                width: dp(84)
+                                on_release: root.do_search()
+                        # 屏幕数字键盘：不依赖系统键盘，电脑手机都能用
+                        GridLayout:
+                            cols: 4
+                            spacing: dp(6)
+                            size_hint_y: None
+                            height: dp(126)
+                            RButton:
+                                text: '1'
+                                bg: CARD2
+                                bg_down: CARD
+                                font_size: dp(15)
+                                on_release: root.keypad_input('1')
+                            RButton:
+                                text: '2'
+                                bg: CARD2
+                                bg_down: CARD
+                                font_size: dp(15)
+                                on_release: root.keypad_input('2')
+                            RButton:
+                                text: '3'
+                                bg: CARD2
+                                bg_down: CARD
+                                font_size: dp(15)
+                                on_release: root.keypad_input('3')
+                            RButton:
+                                text: '4'
+                                bg: CARD2
+                                bg_down: CARD
+                                font_size: dp(15)
+                                on_release: root.keypad_input('4')
+                            RButton:
+                                text: '5'
+                                bg: CARD2
+                                bg_down: CARD
+                                font_size: dp(15)
+                                on_release: root.keypad_input('5')
+                            RButton:
+                                text: '6'
+                                bg: CARD2
+                                bg_down: CARD
+                                font_size: dp(15)
+                                on_release: root.keypad_input('6')
+                            RButton:
+                                text: '7'
+                                bg: CARD2
+                                bg_down: CARD
+                                font_size: dp(15)
+                                on_release: root.keypad_input('7')
+                            RButton:
+                                text: '8'
+                                bg: CARD2
+                                bg_down: CARD
+                                font_size: dp(15)
+                                on_release: root.keypad_input('8')
+                            RButton:
+                                text: '9'
+                                bg: CARD2
+                                bg_down: CARD
+                                font_size: dp(15)
+                                on_release: root.keypad_input('9')
+                            RButton:
+                                text: '0'
+                                bg: CARD2
+                                bg_down: CARD
+                                font_size: dp(15)
+                                on_release: root.keypad_input('0')
+                            RButton:
+                                text: '删'
+                                bg: ACCENT
+                                bg_down: ACCENT_D
+                                font_size: dp(15)
+                                on_release: root.keypad_backspace()
+                            RButton:
+                                text: '清'
+                                bg: ACCENT
+                                bg_down: ACCENT_D
+                                font_size: dp(15)
+                                on_release: root.keypad_clear()
                 # 热门标的
                 Card:
                     Label:
@@ -1337,6 +1420,19 @@ class GameScreen(Screen):
     def quick_search(self, code):
         self.ids.search_input.text = code
         self.do_search()
+
+    # ---------- 屏幕数字键盘（不依赖系统键盘，解决 macOS/安卓输入法不响应的问题） ----------
+    def keypad_input(self, digit):
+        inp = self.ids.search_input
+        if len(inp.text) < 6:
+            inp.text += digit
+
+    def keypad_backspace(self):
+        inp = self.ids.search_input
+        inp.text = inp.text[:-1]
+
+    def keypad_clear(self):
+        self.ids.search_input.text = ''
 
     def fetch_quote_async(self, code, callback):
         def work():
