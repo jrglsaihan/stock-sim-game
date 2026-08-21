@@ -1,0 +1,21 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "运行程序（不调试，最稳）",
+            "type": "shell",
+            "command": "${workspaceFolder}/.venv/bin/python ${workspaceFolder}/main.py",
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            }
+        },
+        {
+            "label": "安装/更新依赖",
+            "type": "shell",
+            "command": "${workspaceFolder}/.venv/bin/python -m pip install -r ${workspaceFolder}/requirements.txt",
+            "problemMatcher": []
+        }
+    ]
+}

@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Kivy / Buildozer
+.kivy/
+.buildozer/
+bin/
+
+# 本地游戏存档
+stock_sim_save.json

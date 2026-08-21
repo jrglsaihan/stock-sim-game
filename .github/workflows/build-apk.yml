@@ -1,0 +1,26 @@
+name: 打包安卓 APK
+
+on:
+  workflow_dispatch:          # 网页手动点 Run workflow
+  push:
+    branches: [ main ]        # 推送到 main 分支时自动打包
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 用 Buildozer 打包
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
+        with:
+          command: buildozer android debug
+          workdir: .
+
+      - name: 上传 APK 成品
+        uses: actions/upload-artifact@v4
+        with:
+          name: 模拟炒股练习-APK
+          path: ${{ steps.buildozer.outputs.filename }}
