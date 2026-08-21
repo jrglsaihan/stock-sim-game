@@ -36,11 +36,14 @@ android.api = 33
 # (int) 最低支持的 Android API 版本
 android.minapi = 21
 
-# (list) 支持的 CPU 架构
-android.archs = arm64-v8a, armeabi-v7a
+# (list) 支持的 CPU 架构（仅 arm64，覆盖几乎所有现代安卓手机，构建更快更稳）
+android.archs = arm64-v8a
 
 # (bool) 允许应用数据备份
 android.allow_backup = True
+
+# (bool) 自动接受安卓 SDK 许可协议（在 CI 无人值守环境下必须为 True）
+android.accept_sdk_license = True
 
 # 应用图标（可选；不设置则用默认图标）
 # icon.filename = %(source.dir)s/icon.png

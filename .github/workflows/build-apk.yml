@@ -7,20 +7,36 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 用 Buildozer 打包
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
-        with:
-          command: buildozer android debug
-          workdir: .
+      - name: 释放磁盘空间
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get clean || true
+          df -h /
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt update
+          sudo apt install -y git zip unzip openjdk-17-jdk python3-pip python3-venv \
+            autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev \
+            libtinfo5 cmake libffi-dev libssl-dev
+
+      - name: 安装 Buildozer
+        run: |
+          pip3 install --upgrade pip
+          pip3 install buildozer cython
+
+      - name: 打包 APK
+        run: |
+          buildozer android debug
 
       - name: 上传 APK 成品
         uses: actions/upload-artifact@v4
         with:
           name: 模拟炒股练习-APK
-          path: ${{ steps.buildozer.outputs.filename }}
+          path: bin/*.apk
